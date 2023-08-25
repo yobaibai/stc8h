@@ -1,0 +1,682 @@
+C51 COMPILER V9.59.0.0   MAIN                                                              07/07/2023 13:26:38 PAGE 1   
+
+
+C51 COMPILER V9.59.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Objects\main.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE main.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT(.\Listings\main
+                    -.lst) TABS(2) OBJECT(.\Objects\main.obj)
+
+line level    source
+
+   1          #include  "config.h"
+   2          #include <intrins.h>
+   3          #include <EEPROM.H>
+   4          
+   5          // 定义常量
+   6          #define LED_PIN P16
+   7          #define SWITCH_PIN P17
+   8          #define EEPROM_ADDR 0x00
+   9          //#define EEPROM_START_ADDR 0x0400
+  10          //#define EEPROM_END_ADDR 0x1234
+  11          #define IAP_ADDRESS 0x0400    //根据你的MCU的具体参数设置
+  12          // 定义变量
+  13          static unsigned char gear = 1; // 当前档位
+  14          unsigned char led_state = 0; // LED状态，0为亮，1为灭
+  15          unsigned char switch_state = 0; // 开关状态，0为开，1为关
+  16          unsigned char switch_locked = 0; // 开关锁定状态，0为未锁定，1为锁定
+  17          unsigned char menu_level = 1; // 菜单级别，1为一级菜单，2为二级菜单
+  18          unsigned char menu_timeout = 0; // 菜单超时计数器，用于检测无操作超时
+  19          //static unsigned char  gear=1;  //档位全局静态变量 初始档位1
+  20          unsigned char button_state = 0; // 按钮状态，0为未按下，1为按下
+  21          unsigned int button_timer = 0; // 按钮计时器，用于检测长按和短按
+  22          static unsigned char lock =0;   //长按短按
+  23          static unsigned long  timelock=0;
+  24          static unsigned long  timelock1=0;
+  25          static unsigned char gear1;
+  26          static unsigned char one=0;
+  27          // 定义函数
+  28          void delay_ms(unsigned int ms); // 延时函数
+  29          void switch_on(); // 开机操作
+  30          void switch_off(); // 关机操作
+  31          void enter_gear_menu(); // 进入档位选择菜单
+  32          void select_gear(unsigned char gear); // 选择档位
+  33          void save_gear(unsigned char gear); // 保存档位到EEPROM
+  34          unsigned char load_gear(); // 从EEPROM中读取档位
+  35          void lock_switch(); // 锁定开关
+  36          void unlock_switch(); // 解锁开关
+  37          void toggle_switch(); // 切换开关状态
+  38          void update_led(); // 更新LED状态
+  39          void update_menu_timeout(); // 更新菜单超时计数器
+  40          void reset_menu_timeout(); // 重置菜单超时计数器
+  41          void exit_menu(); // 退出菜单
+  42          //void Timer0_Init(void);
+  43          unsigned char check_button();
+  44          void Timer0_Init(void)    //30毫秒@24.000MHz
+  45          {
+  46   1        AUXR &= 0x7F;     //定时器时钟12T模式
+  47   1        TMOD &= 0xF0;     //设置定时器模式
+  48   1        TMOD |= 0x01;     //设置定时器模式
+  49   1        TL0 = 0xA0;       //设置定时初始值
+  50   1        TH0 = 0x15;       //设置定时初始值
+  51   1        TF0 = 0;        //清除TF0标志
+  52   1        TR0 = 1;        //定时器0开始计时
+  53   1        ET0=1;
+  54   1        EA=1;
+C51 COMPILER V9.59.0.0   MAIN                                                              07/07/2023 13:26:38 PAGE 2   
+
+  55   1        PT0=0;
+  56   1      }
+  57          
+  58          
+  59          
+  60          
+  61          #define eepromAddress 0x0040
+  62          // 主函数
+  63          void main()
+  64          {   
+  65   1            //P_SW2 |= 0x80;//使能访问 XFR
+  66   1            //void IapIdle();
+  67   1            // 初始化IO口
+  68   1                  P1M0 = 0xbf; P1M1 = 0x4f; 
+  69   1      
+  70   1      
+  71   1          // P1M0 = 0xbf; P1M1 = 0x00; 
+  72   1      
+  73   1        //  TSCHEN = 0x0000;    //TK0~TK15
+  74   1      
+  75   1              P3M0 = 0x04; P3M1 = 0x00; 
+  76   1      
+  77   1        //  TSCHEN1 = 0x00;        //TK0~TK7    4K64TL  触摸功能设置
+  78   1        //  TSCHEN2 = 0x00;        //TK8~TK15
+  79   1          P10=1;
+  80   1          P11=1;
+  81   1          P12=1;
+  82   1          P13=1;
+  83   1          //P13=1;///touch
+  84   1          P32=1; ///
+  85   1          P14=0;
+  86   1          P15=0;
+  87   1          P17=0;
+  88   1      
+  89   1      
+  90   1      
+  91   1          //P17=0;
+  92   1        //  gear=1;
+  93   1          delay_ms(2000);
+  94   1          //unsigned char gear = 1; // 变量用于存储读取的gear数据，默认为1
+  95   1      
+  96   1          if(P16==0)
+  97   1          {
+  98   2      
+  99   2              EEPROM_read_n(eepromAddress, &gear, sizeof(gear));
+ 100   2              // 恢复之前的档位状态
+ 101   2              
+ 102   2          }
+ 103   1          else if(P16==1)
+ 104   1          {
+ 105   2          gear = 1; // 默认值为1
+ 106   2          } 
+ 107   1          
+ 108   1          select_gear(gear);
+ 109   1      if(gear==5)
+ 110   1      {
+ 111   2        gear=0;
+ 112   2      }
+ 113   1          //P32=~P32;
+ 114   1          P14=~P14;
+ 115   1          delay_ms(3000);
+ 116   1        //  P32=~P32;
+C51 COMPILER V9.59.0.0   MAIN                                                              07/07/2023 13:26:38 PAGE 3   
+
+ 117   1          P14=~P14;
+ 118   1          //delay_ms(1000);
+ 119   1      
+ 120   1          //select_gear(gear);
+ 121   1          //timelock1=0;
+ 122   1          //select_gear(gear++);
+ 123   1      
+ 124   1        off:  
+ 125   1          // 初始化开关状态
+ 126   1         // switch_locked = 1; // 初始状态下锁定开关
+ 127   1         //P17=0;
+ 128   1         one=0;
+ 129   1      while(1)
+ 130   1      { 
+ 131   2        check_button();
+ 132   2        button_timer=0;
+ 133   2        P32=1;
+ 134   2        if(lock==3)
+ 135   2        {
+ 136   3          //switch_on(); // 打开开关 判读！！
+ 137   3        lock=0;
+ 138   3        P14=1;
+ 139   3        P15=1;
+ 140   3        P32=0;
+ 141   3          break;
+ 142   3        } 
+ 143   2      }   
+ 144   1        suo:
+ 145   1          
+ 146   1          while(1)
+ 147   1          { 
+ 148   2            P32=0;
+ 149   2          //  one=1;
+ 150   2            check_button();  //判断长短按
+ 151   2            button_timer=0;
+ 152   2              if(lock==2)
+ 153   2              {
+ 154   3                  
+ 155   3              //enter_gear_menu();  //档位选择
+ 156   3                              //定时器0启动
+ 157   3              lock=0;
+ 158   3            //  while(P16==0);
+ 159   3              Timer0_Init();
+ 160   3              timelock=0;
+ 161   3              while(1)
+ 162   3              {
+ 163   4                one=1;
+ 164   4                P32=1;
+ 165   4                
+ 166   4                if(timelock>700)
+ 167   4                {
+ 168   5                  timelock=0;
+ 169   5                  timelock=0;
+ 170   5                  P32=0;
+ 171   5                  lock=0;
+ 172   5                  goto suo;
+ 173   5                }
+ 174   4                //while(P16==0);
+ 175   4                check_button();
+ 176   4                button_timer=0;
+ 177   4              /*  if(lock==3)
+ 178   4                {
+C51 COMPILER V9.59.0.0   MAIN                                                              07/07/2023 13:26:38 PAGE 4   
+
+ 179   4                  lock=0;
+ 180   4                  P14=0;
+ 181   4                  P15=0;
+ 182   4                  P17=0;
+ 183   4                  P32=1;
+ 184   4                  goto  off;
+ 185   4                }*/
+ 186   4                //while(P16==0);
+ 187   4                //check_button();
+ 188   4                if(lock==2)
+ 189   4                {
+ 190   5                  lock=0;
+ 191   5                  //P17=~P17;
+ 192   5                }
+ 193   4                if(lock==1)
+ 194   4                { 
+ 195   5                  lock=0; 
+ 196   5                  P32=1;
+ 197   5                  select_gear(++gear);
+ 198   5                  gear1=gear;
+ 199   5                  if(gear1==5)
+ 200   5                  {
+ 201   6                    gear=0;
+ 202   6                  }
+ 203   5                }
+ 204   4              }     
+ 205   3            }
+ 206   2      
+ 207   2              //break;
+ 208   2              if(lock==3)
+ 209   2              {
+ 210   3                lock=0;
+ 211   3                P14=0;
+ 212   3                P15=0;
+ 213   3                P32=1;
+ 214   3                //P17=0;
+ 215   3                goto off;
+ 216   3              }
+ 217   2      
+ 218   2                
+ 219   2                //switch_off();
+ 220   2            
+ 221   2        
+ 222   2         }
+ 223   1      }
+ 224                /*if(lock=3)
+ 225                {switch_off();}
+ 226              while (1)
+ 227              {
+ 228                Time0;
+ 229                if(timelock==1)
+ 230                {goto suo;}
+ 231                enter_gear_menu();
+ 232                check_button();     
+ 233                    if(lock==2)
+ 234                    {
+ 235                      P17=~P17;
+ 236                    }
+ 237                    if(lock==1)
+ 238                    {
+ 239                    select_gear(gear++);
+ 240                    }
+C51 COMPILER V9.59.0.0   MAIN                                                              07/07/2023 13:26:38 PAGE 5   
+
+ 241                    if(gear==5)
+ 242                    {
+ 243                      gear=1;
+ 244                    }
+ 245                  
+ 246                
+ 247                
+ 248                
+ 249                
+ 250                  // 检测开关状态
+ 251                  if (SWITCH_PIN == 0 && switch_locked == 0) // 开关按下且未锁定
+ 252                  {
+ 253                      toggle_switch(); // 切换开关状态
+ 254                      reset_menu_timeout(); // 重置菜单超时计数器
+ 255                  }
+ 256          
+ 257              }
+ 258          }*/
+ 259          
+ 260          // 判断按钮状态，返回值为，1表示短按，2表示长按
+ 261          unsigned char check_button()
+ 262          {
+ 263   1          
+ 264   1          if (P16 == 1) // 按钮按下
+ 265   1          {
+ 266   2              while(P16==1)
+ 267   2              {
+ 268   3                  //button_state = 1; // 更新按钮状态
+ 269   3                  button_timer++; // 计时器加1
+ 270   3                  delay_ms(20);
+ 271   3                if(button_timer ==100)
+ 272   3                {
+ 273   4                  P32=~P32;
+ 274   4                }
+ 275   3                if(button_timer ==250 && one==0)
+ 276   3                {
+ 277   4                  P14=~P14;
+ 278   4                  P15=~P15;
+ 279   4                }
+ 280   3              }
+ 281   2              
+ 282   2                  if(button_timer>250)
+ 283   2                  {
+ 284   3                      button_state = 0; // 更新按钮状态
+ 285   3                      button_timer = 0; // 重置计时器               
+ 286   3                      //P32=~P32;           //灭灯提示
+ 287   3                      //P14=~P14;
+ 288   3                      lock=3;           // 返回关机状态
+ 289   3                  }
+ 290   2                  if(button_timer>=100 && button_timer<=199)
+ 291   2                  {
+ 292   3                      button_state = 0; // 更新按钮状态
+ 293   3                      button_timer = 0; // 重置计时器               
+ 294   3                    //  P32=1;            //灭灯提示
+ 295   3                      lock=2;           // 返回长按状态
+ 296   3                  }
+ 297   2                  if(button_timer>=5 && button_timer<=85)
+ 298   2                  {
+ 299   3                      button_state = 0; // 更新按钮状态
+ 300   3                      button_timer = 0; // 重置计时器
+ 301   3                      lock=1;           // 返回短按状态
+ 302   3                  }
+C51 COMPILER V9.59.0.0   MAIN                                                              07/07/2023 13:26:38 PAGE 6   
+
+ 303   2          
+ 304   2          }
+ 305   1      }
+*** WARNING C173 IN LINE 305 OF main.c: missing return-expression
+ 306          
+ 307          /*void Timer0_Init(void)    //1毫秒@24.000MHz
+ 308          {
+ 309            AUXR &= 0x7F;     //定时器时钟12T模式
+ 310            TMOD &= 0xF0;     //设置定时器模式
+ 311            TL0 = 0x30;       //设置定时初始值
+ 312            TH0 = 0xF8;       //设置定时初始值
+ 313            TF0 = 0;        //清除TF0标志
+ 314            TR0 = 1;        //定时器0开始计时
+ 315            ET0=1;
+ 316            EA=1;
+ 317            PT0=0;
+ 318          
+ 319          }*/
+ 320          
+ 321          // 定时器0中断服务函数
+ 322          void Timer0_Routine() interrupt 1
+ 323          {
+ 324   1      
+ 325   1      //  static unsigned char timelock1;
+ 326   1        TL0 = 0x40;   //设置定时初始值
+ 327   1        TH0 = 0xA2;   //设置定时初始值
+ 328   1        timelock++;
+ 329   1        //timelock1=timelock;
+ 330   1        /*if(timelock==350)
+ 331   1        {
+ 332   1          P32=0;
+ 333   1        //  goto suo;
+ 334   1          
+ 335   1          //timelock1=1;
+ 336   1        }*/
+ 337   1      }
+ 338            /*  // 更新菜单超时计数器
+ 339              update_menu_timeout();
+ 340              if(timelock==1)
+ 341              {
+ 342              timelock=1;
+ 343              }
+ 344          
+ 345          */
+ 346          // 延时函数
+ 347          void delay_ms(unsigned int ms)
+ 348          {
+ 349   1        unsigned char data i, j;
+ 350   1        while(ms)
+ 351   1        {
+ 352   2          i = 32;
+ 353   2          j = 40;
+ 354   2          do
+ 355   2          {
+ 356   3            while (--j);
+ 357   3          } while (--i);
+ 358   2          ms--;
+ 359   2        }
+ 360   1        }
+ 361          
+ 362          // 开机操作
+ 363          void switch_on()
+C51 COMPILER V9.59.0.0   MAIN                                                              07/07/2023 13:26:38 PAGE 7   
+
+ 364          {
+ 365   1        
+ 366   1        P14=1;
+ 367   1        P15=1;
+ 368   1        P32=0;
+ 369   1        //select_gear(gear);
+ 370   1          // TODO: 实现开机操作
+ 371   1      }
+ 372          
+ 373          // 关机操作
+ 374          void switch_off()
+ 375          {
+ 376   1        P14=0;
+ 377   1        P15=0;
+ 378   1        P32=1;
+ 379   1          // TODO: 实现关机操作
+ 380   1      }
+ 381          
+ 382          // 进入档位选择菜单
+ 383          void enter_gear_menu()
+ 384          {
+ 385   1            
+ 386   1            check_button();
+ 387   1            if(lock==2)
+ 388   1            {  lock=0;
+ 389   2               P32=1;
+ 390   2      
+ 391   2      
+ 392   2            }
+ 393   1          // TODO: 实现进入档位选择菜单操作
+ 394   1      }
+ 395          
+ 396          // 选择档位
+ 397          void select_gear(unsigned char gear)
+ 398          {
+ 399   1                unsigned char gearValue;
+ 400   1      
+ 401   1                switch(gear)       //档位选择函数
+ 402   1                {
+ 403   2                  case 1:        //1档 所有电阻拉高 5v led闪烁一次
+ 404   2                  reset_menu_timeout();
+ 405   2                  P10=1;
+ 406   2                  P11=1;
+ 407   2                  P12=1;
+ 408   2                  P13=1;
+ 409   2                  P32=0;
+ 410   2                  delay_ms(250);
+ 411   2                  P32=1;
+ 412   2                  delay_ms(250);
+ 413   2                  reset_menu_timeout();
+ 414   2                  // 将gear值写入EEPROM
+ 415   2                  gearValue = (unsigned char)gear;
+ 416   2                  EEPROM_SectorErase(eepromAddress); // 先擦除EEPROM扇区
+ 417   2                  EEPROM_write_n(eepromAddress, &gearValue, sizeof(gearValue)); // 写入gear值
+ 418   2      
+ 419   2                  break;
+ 420   2                  case 2:        //2档 51k电阻拉低，其余拉高 9v led闪烁二次
+ 421   2                  reset_menu_timeout();
+ 422   2                  P10=0;
+ 423   2                  P11=1;
+ 424   2                  P12=1;
+ 425   2                  P13=1;
+C51 COMPILER V9.59.0.0   MAIN                                                              07/07/2023 13:26:38 PAGE 8   
+
+ 426   2                  P32=0;
+ 427   2                  delay_ms(250);
+ 428   2                  P32=1;
+ 429   2                  delay_ms(250);
+ 430   2                  P32=0;
+ 431   2                  delay_ms(250);
+ 432   2                  P32=1;
+ 433   2                  delay_ms(250);
+ 434   2                  reset_menu_timeout();
+ 435   2                  // 将gear值写入EEPROM
+ 436   2                  gearValue = (unsigned char)gear;
+ 437   2                  EEPROM_SectorErase(eepromAddress); // 先擦除EEPROM扇区
+ 438   2                  EEPROM_write_n(eepromAddress, &gearValue, sizeof(gearValue)); // 写入gear值
+ 439   2                  break;
+ 440   2                  case 3:        //3档 100k电阻拉低，其余拉高 12v led闪烁三次
+ 441   2                  reset_menu_timeout();
+ 442   2                  P10=1;
+ 443   2                  P11=0;
+ 444   2                  P12=1;
+ 445   2                  P13=1;
+ 446   2                  P32=0;
+ 447   2                  delay_ms(250);
+ 448   2                  P32=1;
+ 449   2                  delay_ms(250);
+ 450   2                  P32=0;
+ 451   2                  delay_ms(250);
+ 452   2                  P32=1;
+ 453   2                  delay_ms(250);
+ 454   2                  P32=0;
+ 455   2                  delay_ms(250);
+ 456   2                  P32=1;
+ 457   2                  delay_ms(250);
+ 458   2                  reset_menu_timeout();
+ 459   2                  // 将gear值写入EEPROM
+ 460   2                  gearValue = (unsigned char)gear;
+ 461   2                  EEPROM_SectorErase(eepromAddress); // 先擦除EEPROM扇区
+ 462   2                  EEPROM_write_n(eepromAddress, &gearValue, sizeof(gearValue)); // 写入gear值
+ 463   2      
+ 464   2                  break;
+ 465   2                  case 4:        //4档 140k电阻拉低，其余拉高 15v led闪烁四次
+ 466   2                  reset_menu_timeout();
+ 467   2                  P10=1;
+ 468   2                  P11=1;
+ 469   2                  P12=0;
+ 470   2                  P13=1;
+ 471   2                  P32=0;
+ 472   2                  delay_ms(250);
+ 473   2                  P32=1;
+ 474   2                  delay_ms(250);        
+ 475   2                  P32=0;
+ 476   2                  delay_ms(250);
+ 477   2                  P32=1;
+ 478   2                  delay_ms(250);      
+ 479   2                  P32=0;
+ 480   2                  delay_ms(250);
+ 481   2                  P32=1;
+ 482   2                  delay_ms(250);      
+ 483   2                  P32=0;
+ 484   2                  delay_ms(250);
+ 485   2                  P32=1;
+ 486   2                  delay_ms(250);
+ 487   2                  reset_menu_timeout();
+C51 COMPILER V9.59.0.0   MAIN                                                              07/07/2023 13:26:38 PAGE 9   
+
+ 488   2                  // 将gear值写入EEPROM
+ 489   2                  gearValue = (unsigned char)gear;
+ 490   2                  EEPROM_SectorErase(eepromAddress); // 先擦除EEPROM扇区
+ 491   2                  EEPROM_write_n(eepromAddress, &gearValue, sizeof(gearValue)); // 写入gear值
+ 492   2      
+ 493   2                  break;
+ 494   2                  case 5:       //五档 180k电阻拉低，其余拉高 20v led闪烁五次
+ 495   2                  reset_menu_timeout();
+ 496   2                  P10=1;
+ 497   2                  P11=1;
+ 498   2                  P12=1;
+ 499   2                  P13=0;
+ 500   2                  P32=0;
+ 501   2                  delay_ms(250);
+ 502   2                  P32=1;
+ 503   2                  delay_ms(250);        
+ 504   2                  P32=0;
+ 505   2                  delay_ms(250);
+ 506   2                  P32=1;
+ 507   2                  delay_ms(250);      
+ 508   2                  P32=0;
+ 509   2                  delay_ms(250);
+ 510   2                  P32=1;
+ 511   2                  delay_ms(250);        
+ 512   2                  P32=0;
+ 513   2                  delay_ms(250);
+ 514   2                  P32=1;
+ 515   2                  delay_ms(250);            
+ 516   2                  P32=0;
+ 517   2                  delay_ms(250);
+ 518   2                  P32=1;
+ 519   2                  delay_ms(250);
+ 520   2                  reset_menu_timeout();
+ 521   2                  // 将gear值写入EEPROM
+ 522   2                  gearValue = (unsigned char)gear;
+ 523   2                  EEPROM_SectorErase(eepromAddress); // 先擦除EEPROM扇区
+ 524   2                  EEPROM_write_n(eepromAddress, &gearValue, sizeof(gearValue)); // 写入gear值
+ 525   2                  
+ 526   2                //  gear=1;
+ 527   2                  /*if(gear==6)
+ 528   2                  {
+ 529   2                    gear=1;
+ 530   2                  }
+ 531   2                  reset_menu_timeout();*/
+ 532   2                  
+ 533   2                  break;
+ 534   2                }
+ 535   1        
+ 536   1          // TODO: 实现选择档位操作
+ 537   1      }
+ 538          
+ 539          // 保存档位到EEPROM
+ 540          void save_gear(unsigned char gear)
+ 541          {
+ 542   1          // TODO: 实现保存档位到EEPROM操作
+ 543   1      }
+*** WARNING C280 IN LINE 540 OF main.c: 'gear': unreferenced local variable
+ 544          
+ 545          // 从EEPROM中读取档位
+ 546          unsigned char load_gear()
+ 547          {
+ 548   1          // TODO: 实现从EEPROM中读取档位操作
+C51 COMPILER V9.59.0.0   MAIN                                                              07/07/2023 13:26:38 PAGE 10  
+
+ 549   1      }
+*** WARNING C173 IN LINE 549 OF main.c: missing return-expression
+ 550          
+ 551          // 锁定开关
+ 552          void lock_switch()
+ 553          {
+ 554   1          switch_locked = 1;
+ 555   1      }
+ 556          
+ 557          // 解锁开关
+ 558          void unlock_switch()
+ 559          {
+ 560   1          switch_locked = 0;
+ 561   1      }
+ 562          
+ 563          // 切换开关状态
+ 564          void toggle_switch()
+ 565          {
+ 566   1          if (switch_state == 0) // 开关打开
+ 567   1          {
+ 568   2              switch_off(); // 关机
+ 569   2              lock_switch(); // 锁定开关
+ 570   2          }
+ 571   1          else // 开关关闭
+ 572   1          {
+ 573   2              switch_on(); // 开机
+ 574   2              unlock_switch(); // 解锁开关
+ 575   2          }
+ 576   1      }
+ 577          
+ 578          /*// 更新LED状态
+ 579          void update_led()
+ 580          {
+ 581              if (menu_level == 2) // 在档位选择菜单中
+ 582              {
+ 583                  if (led_state == 0) // LED亮
+ 584                  {
+ 585                      LED_PIN = 0; // 点亮LED
+ 586                      delay_ms(gear * 100); // 延时
+ 587                      LED_PIN = 1; // 熄灭LED
+ 588                      led_state = 1; // 更新LED状态
+ 589                  }
+ 590                  else // LED灭
+ 591                  {
+ 592                      LED_PIN = 1; // 熄灭LED
+ 593                      delay_ms((6 - gear) * 100); // 延时
+ 594                      LED_PIN = 0; // 点亮LED
+ 595                      led_state = 0; // 更新LED状态
+ 596                  }
+ 597              }
+ 598              else // 不在档位选择菜单中
+ 599              {
+ 600                  // TODO: 实现其他LED控制操作
+ 601              }
+ 602          }*/
+ 603          
+ 604          // 更新菜单超时计数器
+ 605          void update_menu_timeout()
+ 606          {
+ 607   1          if (menu_level == 2) // 在档位选择菜单中
+ 608   1          {
+ 609   2              menu_timeout++;       // 超时计数器加1
+C51 COMPILER V9.59.0.0   MAIN                                                              07/07/2023 13:26:38 PAGE 11  
+
+ 610   2              if(menu_timeout=10000)
+*** WARNING C276 IN LINE 610 OF main.c: constant in condition expression
+ 611   2              {
+ 612   3              timelock=0;
+ 613   3              }
+ 614   2          }
+ 615   1          else // 不在档位选择菜单中
+ 616   1          {
+ 617   2              menu_timeout = 0; // 重置超时计数器
+ 618   2          }
+ 619   1      }
+ 620          
+ 621          // 重置菜单超时计数器
+ 622          void reset_menu_timeout()
+ 623          {
+ 624   1          timelock = 0;
+ 625   1      }
+ 626          
+ 627          // 退出菜单
+ 628          void exit_menu()
+ 629          {
+ 630   1          menu_level = 1; // 返回一级菜单
+ 631   1          // TODO: 实现退出菜单操作
+ 632   1      }
+*** WARNING C290 IN LINE 305 OF main.c: missing return value
+*** WARNING C290 IN LINE 549 OF main.c: missing return value
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    764    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     20       3
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  6 WARNING(S),  0 ERROR(S)
